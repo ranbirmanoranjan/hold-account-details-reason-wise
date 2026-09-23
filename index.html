@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hold Account Details — Reason Wise</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --violet: #6e1db9;
+    --violet-dark: #4f1387;
+    --ink: #1a1a1f;
+    --paper: #faf9fc;
+    --line: #e6e2ee;
+    --muted: #6b6577;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Inter', -apple-system, sans-serif; background: var(--paper); color: var(--ink); }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 32px; border-bottom: 1px solid var(--line); background: #fff;
+  }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  #user-badge { display: none; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+  #user-badge img { width: 28px; height: 28px; border-radius: 50%; }
+  #signout { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; color: var(--muted); }
+  #last-synced { font-size: 12px; color: var(--muted); padding: 2px 10px; border-left: 1px solid var(--line); }
+
+  #gate { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70vh; gap: 16px; text-align: center; }
+  #gate h2 { font-size: 22px; margin: 0; }
+  #gate p { color: var(--muted); margin: 0 0 8px; max-width: 360px; }
+  #gate-error { color: #b3261e; font-size: 13px; display: none; max-width: 360px; }
+
+  main { padding: 28px 32px; display: none; }
+
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select {
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit;
+  }
+  .toolbar input[type=search] { flex: 1; min-width: 200px; }
+  .row-count { color: var(--muted); font-size: 12px; }
+
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; background: #fbfaff; position: sticky; top: 0; }
+  tr:last-child td { border-bottom: none; }
+  .table-wrap { max-height: 70vh; overflow: auto; }
+  .empty { padding: 24px 20px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Hold Account Details — Reason Wise</h1>
+    <div class="sub">All hold/unhold events across accounts</div>
+  </div>
+  <div id="user-badge">
+    <img id="user-avatar" src="" alt="">
+    <span id="user-email"></span>
+    <span id="last-synced"></span>
+    <button id="signout" onclick="handleSignOut()">Sign out</button>
+  </div>
+</header>
+
+<div id="gate">
+  <h2>Sign in to view this dashboard</h2>
+  <p>Use your Spyne Google account. Only spyne.ai and spyne.co.in emails can access this dashboard.</p>
+  <div id="g_id_signin"></div>
+  <div id="gate-error"></div>
+</div>
+
+<main id="app">
+  <div class="toolbar">
+    <input type="search" id="search-box" placeholder="Search reason, entity, email, PoC..." oninput="renderTable()">
+    <select id="reason-filter" onchange="renderTable()"><option value="">All reasons</option></select>
+    <span class="row-count" id="row-count"></span>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table id="data-table"></table></div>
+    <div class="empty" id="empty-msg" style="display:none;">No matching rows.</div>
+  </div>
+</main>
+
+<script>
+const GOOGLE_CLIENT_ID = '269378711505-ueliguk4h0esut6n5117u1qaimp98r63.apps.googleusercontent.com';
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyYNn7aA6LmJs92j8D0uqT4WkWg17Qi2c_gH5qv6Sm0ET--zYOxeOxGS_W9mEfkCzbb/exec';
+
+let currentToken = null;
+let refreshTimer = null;
+let syncTickTimer = null;
+let lastPullAt = null;
+let allRows = [];
+
+window.onload = function () {
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleCredentialResponse,
+    hd: 'spyne.ai'
+  });
+  google.accounts.id.renderButton(document.getElementById('g_id_signin'), { theme: 'outline', size: 'large' });
+};
+
+function handleCredentialResponse(response) {
+  currentToken = response.credential;
+  const payload = JSON.parse(atob(response.credential.split('.')[1]));
+  document.getElementById('user-avatar').src = payload.picture || '';
+  document.getElementById('user-email').textContent = payload.email;
+  document.getElementById('user-badge').style.display = 'flex';
+  loadData();
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(loadData, 15 * 60 * 1000);
+}
+
+function handleSignOut() {
+  currentToken = null;
+  if (refreshTimer) clearInterval(refreshTimer);
+  if (syncTickTimer) { clearInterval(syncTickTimer); syncTickTimer = null; }
+  document.getElementById('user-badge').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('gate').style.display = 'flex';
+}
+
+function renderLastSynced() {
+  const el = document.getElementById('last-synced');
+  if (!lastPullAt) { el.textContent = ''; return; }
+  const mins = Math.max(0, Math.round((Date.now() - lastPullAt.getTime()) / 60000));
+  const timeStr = lastPullAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const ago = mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : mins + ' min ago';
+  el.textContent = 'Data as of ' + timeStr + ' (' + ago + ')';
+}
+
+function loadData() {
+  const errEl = document.getElementById('gate-error');
+  errEl.style.display = 'none';
+  fetch(GAS_WEBAPP_URL + '?token=' + encodeURIComponent(currentToken))
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (res.error) {
+        errEl.textContent = res.error;
+        errEl.style.display = 'block';
+        document.getElementById('gate').style.display = 'flex';
+        document.getElementById('app').style.display = 'none';
+        return;
+      }
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      allRows = res.rows || [];
+      lastPullAt = res.lastPullAt ? new Date(res.lastPullAt) : null;
+      renderLastSynced();
+      if (!syncTickTimer) syncTickTimer = setInterval(renderLastSynced, 30 * 1000);
+      populateReasonFilter();
+      renderTable();
+    })
+    .catch(function () {
+      errEl.textContent = 'Could not reach the data service. Try again shortly.';
+      errEl.style.display = 'block';
+    });
+}
+
+function populateReasonFilter() {
+  const sel = document.getElementById('reason-filter');
+  const current = sel.value;
+  const reasons = Array.from(new Set(allRows.map(function (r) { return r.reason; }).filter(Boolean))).sort();
+  sel.innerHTML = '<option value="">All reasons</option>' + reasons.map(function (r) {
+    return '<option value="' + r.replace(/"/g, '&quot;') + '">' + r + '</option>';
+  }).join('');
+  sel.value = current;
+}
+
+function renderTable() {
+  const search = document.getElementById('search-box').value.toLowerCase();
+  const reasonFilter = document.getElementById('reason-filter').value;
+  const filtered = allRows.filter(function (r) {
+    if (reasonFilter && r.reason !== reasonFilter) return false;
+    if (!search) return true;
+    return Object.values(r).some(function (v) {
+      return v && String(v).toLowerCase().indexOf(search) !== -1;
+    });
+  });
+
+  document.getElementById('row-count').textContent = filtered.length + ' of ' + allRows.length + ' rows';
+  const table = document.getElementById('data-table');
+  const emptyMsg = document.getElementById('empty-msg');
+  table.innerHTML = '';
+
+  if (!filtered.length) {
+    emptyMsg.style.display = 'block';
+    return;
+  }
+  emptyMsg.style.display = 'none';
+
+  const headers = Object.keys(allRows[0]);
+  const thead = document.createElement('tr');
+  headers.forEach(function (h) {
+    const th = document.createElement('th');
+    th.textContent = h;
+    thead.appendChild(th);
+  });
+  table.appendChild(thead);
+
+  filtered.forEach(function (row) {
+    const tr = document.createElement('tr');
+    headers.forEach(function (h) {
+      const td = document.createElement('td');
+      td.textContent = row[h];
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+}
+</script>
+</body>
+</html>
