@@ -9,6 +9,7 @@
   :root {
     --violet: #6e1db9;
     --violet-dark: #4f1387;
+    --violet-soft: #f3ecfb;
     --ink: #1a1a1f;
     --paper: #faf9fc;
     --line: #e6e2ee;
@@ -18,7 +19,7 @@
   body { margin: 0; font-family: 'Inter', -apple-system, sans-serif; background: var(--paper); color: var(--ink); }
   header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 32px; border-bottom: 1px solid var(--line); background: #fff;
+    padding: 18px 32px; border-bottom: 1px solid var(--line); background: #fff;
   }
   header h1 { font-size: 18px; font-weight: 600; margin: 0; }
   header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -32,22 +33,40 @@
   #gate p { color: var(--muted); margin: 0 0 8px; max-width: 360px; }
   #gate-error { color: #b3261e; font-size: 13px; display: none; max-width: 360px; }
 
-  main { padding: 28px 32px; display: none; }
+  main { padding: 24px 32px 40px; display: none; }
 
-  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-  .toolbar input, .toolbar select {
-    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit;
-  }
-  .toolbar input[type=search] { flex: 1; min-width: 200px; }
-  .row-count { color: var(--muted); font-size: 12px; }
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .stat-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .stat-card .num { font-size: 26px; font-weight: 700; color: var(--violet); }
+  .stat-card .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .stat-card .sub { font-size: 12px; color: var(--ink); margin-top: 6px; }
+
+  .breakdown-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .breakdown-row { grid-template-columns: 1fr; } }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .panel h3 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+  .bar-label { width: 190px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { flex: 1; background: var(--violet-soft); border-radius: 4px; height: 18px; position: relative; overflow: hidden; }
+  .bar-fill { background: var(--violet); height: 100%; border-radius: 4px; }
+  .bar-count { width: 42px; text-align: right; flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-bottom: 16px; }
+  .filters .fgroup { display: flex; flex-direction: column; gap: 4px; }
+  .filters label { font-size: 11px; color: var(--muted); }
+  .filters input, .filters select { border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font-size: 13px; font-family: inherit; }
+  .filters input[type=search] { min-width: 200px; flex: 1; }
+  #clear-filters { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; font-size: 12px; color: var(--violet); cursor: pointer; }
+  .row-count { color: var(--muted); font-size: 12px; margin-left: auto; align-self: center; }
 
   .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; font-size: 12px; background: #fbfaff; position: sticky; top: 0; }
   tr:last-child td { border-bottom: none; }
-  .table-wrap { max-height: 70vh; overflow: auto; }
+  .table-wrap { max-height: 60vh; overflow: auto; }
   .empty { padding: 24px 20px; color: var(--muted); font-size: 13px; }
+  .reason-pill { display: inline-block; padding: 2px 8px; border-radius: 20px; background: var(--violet-soft); color: var(--violet-dark); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -73,11 +92,31 @@
 </div>
 
 <main id="app">
-  <div class="toolbar">
-    <input type="search" id="search-box" placeholder="Search reason, entity, email, PoC..." oninput="renderTable()">
-    <select id="reason-filter" onchange="renderTable()"><option value="">All reasons</option></select>
+  <div class="stats-row" id="stats-row"></div>
+
+  <div class="breakdown-row">
+    <div class="panel">
+      <h3>Holds by Reason</h3>
+      <div id="reason-breakdown"></div>
+    </div>
+    <div class="panel">
+      <h3>Holds by Entity Type</h3>
+      <div id="type-breakdown"></div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div class="fgroup"><label>From</label><input type="date" id="f-date-from" onchange="renderAll()"></div>
+    <div class="fgroup"><label>To</label><input type="date" id="f-date-to" onchange="renderAll()"></div>
+    <div class="fgroup"><label>Entity type</label><select id="f-entity-type" onchange="renderAll()"><option value="">All</option></select></div>
+    <div class="fgroup"><label>Reason</label><select id="f-reason" onchange="renderAll()"><option value="">All</option></select></div>
+    <div class="fgroup"><label>PoC OB</label><select id="f-poc-ob" onchange="renderAll()"><option value="">All</option></select></div>
+    <div class="fgroup"><label>PoC CS</label><select id="f-poc-cs" onchange="renderAll()"><option value="">All</option></select></div>
+    <div class="fgroup"><label>Search entity / email</label><input type="search" id="f-search" placeholder="Search..." oninput="renderAll()"></div>
+    <button id="clear-filters" onclick="clearFilters()">Clear filters</button>
     <span class="row-count" id="row-count"></span>
   </div>
+
   <div class="card">
     <div class="table-wrap"><table id="data-table"></table></div>
     <div class="empty" id="empty-msg" style="display:none;">No matching rows.</div>
@@ -93,6 +132,21 @@ let refreshTimer = null;
 let syncTickTimer = null;
 let lastPullAt = null;
 let allRows = [];
+let K = {}; // resolved column-name keys, discovered from the actual data headers
+
+function resolveKeys(headers) {
+  function find(fn) { return headers.find(fn) || null; }
+  return {
+    date: find(function (h) { return /created_at/i.test(h) && !/by_email/i.test(h); }),
+    reason: find(function (h) { return /^reason$/i.test(h); }) || 'reason',
+    entityType: find(function (h) { return /^entity_type$/i.test(h); }) || 'entity_type',
+    entityName: find(function (h) { return /^entity_name$/i.test(h); }) || 'entity_name',
+    entityId: find(function (h) { return /entity_id/i.test(h) && !/resolved/i.test(h); }),
+    email: find(function (h) { return /created_by_email/i.test(h); }) || 'created_by_email',
+    pocOb: find(function (h) { return /poc.?ob/i.test(h); }),
+    pocCs: find(function (h) { return /poc.?cs/i.test(h); })
+  };
+}
 
 window.onload = function () {
   google.accounts.id.initialize({
@@ -151,8 +205,9 @@ function loadData() {
       lastPullAt = res.lastPullAt ? new Date(res.lastPullAt) : null;
       renderLastSynced();
       if (!syncTickTimer) syncTickTimer = setInterval(renderLastSynced, 30 * 1000);
-      populateReasonFilter();
-      renderTable();
+      if (allRows.length) K = resolveKeys(Object.keys(allRows[0]));
+      populateFilterOptions();
+      renderAll();
     })
     .catch(function () {
       errEl.textContent = 'Could not reach the data service. Try again shortly.';
@@ -160,56 +215,147 @@ function loadData() {
     });
 }
 
-function populateReasonFilter() {
-  const sel = document.getElementById('reason-filter');
+function uniqueSorted(key) {
+  return Array.from(new Set(allRows.map(function (r) { return r[key]; }).filter(Boolean))).sort();
+}
+
+function fillSelect(id, values) {
+  const sel = document.getElementById(id);
   const current = sel.value;
-  const reasons = Array.from(new Set(allRows.map(function (r) { return r.reason; }).filter(Boolean))).sort();
-  sel.innerHTML = '<option value="">All reasons</option>' + reasons.map(function (r) {
-    return '<option value="' + r.replace(/"/g, '&quot;') + '">' + r + '</option>';
+  sel.innerHTML = '<option value="">All</option>' + values.map(function (v) {
+    return '<option value="' + String(v).replace(/"/g, '&quot;') + '">' + v + '</option>';
   }).join('');
   sel.value = current;
 }
 
-function renderTable() {
-  const search = document.getElementById('search-box').value.toLowerCase();
-  const reasonFilter = document.getElementById('reason-filter').value;
-  const filtered = allRows.filter(function (r) {
-    if (reasonFilter && r.reason !== reasonFilter) return false;
-    if (!search) return true;
-    return Object.values(r).some(function (v) {
-      return v && String(v).toLowerCase().indexOf(search) !== -1;
-    });
-  });
+function populateFilterOptions() {
+  fillSelect('f-entity-type', uniqueSorted(K.entityType));
+  fillSelect('f-reason', uniqueSorted(K.reason));
+  if (K.pocOb) fillSelect('f-poc-ob', uniqueSorted(K.pocOb));
+  if (K.pocCs) fillSelect('f-poc-cs', uniqueSorted(K.pocCs));
+}
 
-  document.getElementById('row-count').textContent = filtered.length + ' of ' + allRows.length + ' rows';
+function clearFilters() {
+  document.getElementById('f-date-from').value = '';
+  document.getElementById('f-date-to').value = '';
+  document.getElementById('f-entity-type').value = '';
+  document.getElementById('f-reason').value = '';
+  document.getElementById('f-poc-ob').value = '';
+  document.getElementById('f-poc-cs').value = '';
+  document.getElementById('f-search').value = '';
+  renderAll();
+}
+
+function getFiltered() {
+  const from = document.getElementById('f-date-from').value;
+  const to = document.getElementById('f-date-to').value;
+  const entityType = document.getElementById('f-entity-type').value;
+  const reason = document.getElementById('f-reason').value;
+  const pocOb = document.getElementById('f-poc-ob').value;
+  const pocCs = document.getElementById('f-poc-cs').value;
+  const search = document.getElementById('f-search').value.toLowerCase();
+
+  return allRows.filter(function (r) {
+    if (entityType && r[K.entityType] !== entityType) return false;
+    if (reason && r[K.reason] !== reason) return false;
+    if (pocOb && r[K.pocOb] !== pocOb) return false;
+    if (pocCs && r[K.pocCs] !== pocCs) return false;
+    if (K.date && (from || to)) {
+      const d = r[K.date] ? new Date(r[K.date]) : null;
+      if (!d || isNaN(d)) return false;
+      if (from && d < new Date(from + 'T00:00:00')) return false;
+      if (to && d > new Date(to + 'T23:59:59')) return false;
+    }
+    if (search) {
+      const hay = [r[K.entityName], r[K.email], r[K.entityId], r[K.reason]].join(' ').toLowerCase();
+      if (hay.indexOf(search) === -1) return false;
+    }
+    return true;
+  });
+}
+
+function countBy(rows, key) {
+  const counts = {};
+  rows.forEach(function (r) {
+    const v = r[key] || '(blank)';
+    counts[v] = (counts[v] || 0) + 1;
+  });
+  return Object.entries(counts).sort(function (a, b) { return b[1] - a[1]; });
+}
+
+function renderStats(rows) {
+  const total = rows.length;
+  const uniqueEntities = new Set(rows.map(function (r) { return r[K.entityId] || r[K.entityName]; })).size;
+  const reasonCounts = countBy(rows, K.reason);
+  const pocObCounts = K.pocOb ? countBy(rows, K.pocOb) : [];
+  const topReason = reasonCounts[0];
+  const topPoc = pocObCounts[0];
+
+  const cards = [
+    { num: total, lbl: 'Total holds (filtered)' },
+    { num: uniqueEntities, lbl: 'Unique entities on hold' },
+    { num: topReason ? topReason[1] : 0, lbl: 'Top reason', sub: topReason ? topReason[0] : '—' },
+    { num: topPoc ? topPoc[1] : 0, lbl: 'Most-affected PoC OB', sub: topPoc ? topPoc[0] : '—' }
+  ];
+  document.getElementById('stats-row').innerHTML = cards.map(function (c) {
+    return '<div class="stat-card"><div class="num">' + c.num + '</div><div class="lbl">' + c.lbl + '</div>' +
+      (c.sub ? '<div class="sub">' + c.sub + '</div>' : '') + '</div>';
+  }).join('');
+}
+
+function renderBars(containerId, entries, max) {
+  const top = entries.slice(0, 8);
+  const maxCount = Math.max.apply(null, top.map(function (e) { return e[1]; }).concat([1]));
+  document.getElementById(containerId).innerHTML = top.map(function (e) {
+    const pct = Math.round((e[1] / maxCount) * 100);
+    return '<div class="bar-row"><div class="bar-label" title="' + e[0] + '">' + e[0] + '</div>' +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="bar-count">' + e[1] + '</div></div>';
+  }).join('') || '<div class="empty">No data.</div>';
+}
+
+function renderTable(rows) {
+  document.getElementById('row-count').textContent = rows.length + ' of ' + allRows.length + ' rows';
   const table = document.getElementById('data-table');
   const emptyMsg = document.getElementById('empty-msg');
   table.innerHTML = '';
-
-  if (!filtered.length) {
-    emptyMsg.style.display = 'block';
-    return;
-  }
+  if (!rows.length) { emptyMsg.style.display = 'block'; return; }
   emptyMsg.style.display = 'none';
 
-  const headers = Object.keys(allRows[0]);
+  const displayCols = [K.entityType, K.reason, K.email, K.date, K.entityId, K.entityName, K.pocOb, K.pocCs].filter(Boolean);
   const thead = document.createElement('tr');
-  headers.forEach(function (h) {
+  displayCols.forEach(function (h) {
     const th = document.createElement('th');
     th.textContent = h;
     thead.appendChild(th);
   });
   table.appendChild(thead);
 
-  filtered.forEach(function (row) {
+  rows.slice(0, 1000).forEach(function (row) {
     const tr = document.createElement('tr');
-    headers.forEach(function (h) {
+    displayCols.forEach(function (h) {
       const td = document.createElement('td');
-      td.textContent = row[h];
+      if (h === K.reason) {
+        const span = document.createElement('span');
+        span.className = 'reason-pill';
+        span.textContent = row[h];
+        td.appendChild(span);
+      } else {
+        td.textContent = row[h];
+      }
       tr.appendChild(td);
     });
     table.appendChild(tr);
   });
+}
+
+function renderAll() {
+  if (!allRows.length) return;
+  const filtered = getFiltered();
+  renderStats(filtered);
+  renderBars('reason-breakdown', countBy(filtered, K.reason));
+  renderBars('type-breakdown', countBy(filtered, K.entityType));
+  renderTable(filtered);
 }
 </script>
 </body>
