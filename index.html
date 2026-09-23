@@ -59,6 +59,36 @@
   #clear-filters { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; font-size: 12px; color: var(--violet); cursor: pointer; }
   .row-count { color: var(--muted); font-size: 12px; margin-left: auto; align-self: center; }
 
+  .date-range { position: relative; }
+  .date-range-btn {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px;
+    font-size: 13px; font-family: inherit; background: #fff; cursor: pointer; color: var(--ink);
+  }
+  .date-range-btn:hover { border-color: var(--violet); }
+  .date-range-panel {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12); overflow: hidden;
+  }
+  .date-range-panel.open { display: flex; }
+  .quick-select { width: 180px; padding: 10px 0; border-right: 1px solid var(--line); }
+  .quick-select .grp-label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 16px 4px; }
+  .quick-select button {
+    display: block; width: 100%; text-align: left; border: none; background: none;
+    padding: 8px 16px; font-size: 13px; font-family: inherit; cursor: pointer; color: var(--ink);
+  }
+  .quick-select button:hover { background: var(--paper); }
+  .quick-select button.active { background: var(--violet-soft); color: var(--violet-dark); font-weight: 600; }
+  .custom-range-box { width: 260px; padding: 16px; display: none; }
+  .custom-range-box.open { display: block; }
+  .custom-range-box .crb-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 10px; }
+  .custom-range-box .crb-inputs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .custom-range-box input[type=date] { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-size: 13px; font-family: inherit; }
+  .custom-range-box .crb-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .crb-cancel { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; color: var(--muted); }
+  .crb-apply { background: var(--violet); border: none; border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; color: #fff; font-weight: 600; }
+
   .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -106,8 +136,26 @@
   </div>
 
   <div class="filters">
-    <div class="fgroup"><label>From</label><input type="date" id="f-date-from" onchange="renderAll()"></div>
-    <div class="fgroup"><label>To</label><input type="date" id="f-date-to" onchange="renderAll()"></div>
+    <div class="fgroup date-range">
+      <label>Date range</label>
+      <button type="button" class="date-range-btn" id="date-range-btn" onclick="toggleDatePanel()">
+        <span id="date-range-label">All time</span> <span>▾</span>
+      </button>
+      <div class="date-range-panel" id="date-range-panel">
+        <div class="quick-select" id="quick-select"></div>
+        <div class="custom-range-box" id="custom-range-box">
+          <div class="crb-label">Custom range</div>
+          <div class="crb-inputs">
+            <input type="date" id="crb-from">
+            <input type="date" id="crb-to">
+          </div>
+          <div class="crb-actions">
+            <button class="crb-cancel" type="button" onclick="closeDatePanel()">Cancel</button>
+            <button class="crb-apply" type="button" onclick="applyCustomRange()">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="fgroup"><label>Entity type</label><select id="f-entity-type" onchange="renderAll()"><option value="">All</option></select></div>
     <div class="fgroup"><label>Reason</label><select id="f-reason" onchange="renderAll()"><option value="">All</option></select></div>
     <div class="fgroup"><label>PoC OB</label><select id="f-poc-ob" onchange="renderAll()"><option value="">All</option></select></div>
@@ -134,6 +182,86 @@ let lastPullAt = null;
 let allRows = [];
 let K = {}; // resolved column-name keys, discovered from the actual data headers
 
+// ===== Date range picker state =====
+let dateFrom = null; // Date or null (null = no lower bound)
+let dateTo = null;   // Date or null (null = no upper bound)
+let dateRangeLabel = 'All time';
+
+function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function endOfDay(d) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
+
+const QUICK_RANGES = [
+  { group: 'Quick select', label: 'Today', fn: function () { const t = new Date(); return [startOfDay(t), endOfDay(t)]; } },
+  { group: 'Quick select', label: 'Yesterday', fn: function () { const t = new Date(); t.setDate(t.getDate() - 1); return [startOfDay(t), endOfDay(t)]; } },
+  { group: 'Quick select', label: 'Last 7 days', fn: function () { const t = new Date(); const s = new Date(); s.setDate(s.getDate() - 6); return [startOfDay(s), endOfDay(t)]; } },
+  { group: 'Quick select', label: 'Last 30 days', fn: function () { const t = new Date(); const s = new Date(); s.setDate(s.getDate() - 29); return [startOfDay(s), endOfDay(t)]; } },
+  { group: 'Months', label: 'This month', fn: function () { const t = new Date(); return [startOfDay(new Date(t.getFullYear(), t.getMonth(), 1)), endOfDay(t)]; } },
+  { group: 'Months', label: 'Last month', fn: function () { const t = new Date(); const s = new Date(t.getFullYear(), t.getMonth() - 1, 1); const e = new Date(t.getFullYear(), t.getMonth(), 0); return [startOfDay(s), endOfDay(e)]; } },
+  { group: 'Months', label: 'Last 3 months', fn: function () { const t = new Date(); const s = new Date(); s.setMonth(s.getMonth() - 3); return [startOfDay(s), endOfDay(t)]; } },
+  { group: 'Months', label: 'Last 6 months', fn: function () { const t = new Date(); const s = new Date(); s.setMonth(s.getMonth() - 6); return [startOfDay(s), endOfDay(t)]; } },
+  { group: '', label: 'This year', fn: function () { const t = new Date(); return [startOfDay(new Date(t.getFullYear(), 0, 1)), endOfDay(t)]; } },
+  { group: '', label: 'All time', fn: function () { return [null, null]; } },
+  { group: '', label: 'Custom range', custom: true }
+];
+
+function toggleDatePanel() {
+  document.getElementById('date-range-panel').classList.toggle('open');
+}
+function closeDatePanel() {
+  document.getElementById('date-range-panel').classList.remove('open');
+  document.getElementById('custom-range-box').classList.remove('open');
+}
+document.addEventListener('click', function (e) {
+  const wrap = document.querySelector('.date-range');
+  if (wrap && !wrap.contains(e.target)) closeDatePanel();
+});
+
+function renderQuickSelect() {
+  const el = document.getElementById('quick-select');
+  let html = '';
+  let lastGroup = null;
+  QUICK_RANGES.forEach(function (opt) {
+    if (opt.group && opt.group !== lastGroup) {
+      html += '<div class="grp-label">' + opt.group + '</div>';
+      lastGroup = opt.group;
+    }
+    const active = opt.label === dateRangeLabel ? ' active' : '';
+    html += '<button type="button" class="' + active.trim() + '" onclick="selectQuickRange(\'' + opt.label + '\')">' + opt.label + '</button>';
+  });
+  el.innerHTML = html;
+}
+
+function selectQuickRange(label) {
+  const opt = QUICK_RANGES.find(function (o) { return o.label === label; });
+  if (!opt) return;
+  if (opt.custom) {
+    document.getElementById('custom-range-box').classList.add('open');
+    renderQuickSelect();
+    return;
+  }
+  const range = opt.fn();
+  dateFrom = range[0];
+  dateTo = range[1];
+  dateRangeLabel = label;
+  document.getElementById('date-range-label').textContent = label;
+  document.getElementById('custom-range-box').classList.remove('open');
+  renderQuickSelect();
+  closeDatePanel();
+  renderAll();
+}
+
+function applyCustomRange() {
+  const fromVal = document.getElementById('crb-from').value;
+  const toVal = document.getElementById('crb-to').value;
+  dateFrom = fromVal ? startOfDay(new Date(fromVal + 'T00:00:00')) : null;
+  dateTo = toVal ? endOfDay(new Date(toVal + 'T00:00:00')) : null;
+  dateRangeLabel = (fromVal || 'start') + ' → ' + (toVal || 'today');
+  document.getElementById('date-range-label').textContent = dateRangeLabel;
+  renderQuickSelect();
+  closeDatePanel();
+  renderAll();
+}
+
 function resolveKeys(headers) {
   function find(fn) { return headers.find(fn) || null; }
   return {
@@ -149,6 +277,7 @@ function resolveKeys(headers) {
 }
 
 window.onload = function () {
+  renderQuickSelect();
   google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID,
     callback: handleCredentialResponse,
@@ -236,8 +365,13 @@ function populateFilterOptions() {
 }
 
 function clearFilters() {
-  document.getElementById('f-date-from').value = '';
-  document.getElementById('f-date-to').value = '';
+  dateFrom = null;
+  dateTo = null;
+  dateRangeLabel = 'All time';
+  document.getElementById('date-range-label').textContent = 'All time';
+  document.getElementById('crb-from').value = '';
+  document.getElementById('crb-to').value = '';
+  renderQuickSelect();
   document.getElementById('f-entity-type').value = '';
   document.getElementById('f-reason').value = '';
   document.getElementById('f-poc-ob').value = '';
@@ -247,8 +381,6 @@ function clearFilters() {
 }
 
 function getFiltered() {
-  const from = document.getElementById('f-date-from').value;
-  const to = document.getElementById('f-date-to').value;
   const entityType = document.getElementById('f-entity-type').value;
   const reason = document.getElementById('f-reason').value;
   const pocOb = document.getElementById('f-poc-ob').value;
@@ -260,11 +392,11 @@ function getFiltered() {
     if (reason && r[K.reason] !== reason) return false;
     if (pocOb && r[K.pocOb] !== pocOb) return false;
     if (pocCs && r[K.pocCs] !== pocCs) return false;
-    if (K.date && (from || to)) {
+    if (K.date && (dateFrom || dateTo)) {
       const d = r[K.date] ? new Date(r[K.date]) : null;
       if (!d || isNaN(d)) return false;
-      if (from && d < new Date(from + 'T00:00:00')) return false;
-      if (to && d > new Date(to + 'T23:59:59')) return false;
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
     }
     if (search) {
       const hay = [r[K.entityName], r[K.email], r[K.entityId], r[K.reason]].join(' ').toLowerCase();
