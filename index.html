@@ -210,6 +210,7 @@ function toggleDatePanel() {
 function closeDatePanel() {
   document.getElementById('date-range-panel').classList.remove('open');
   document.getElementById('custom-range-box').classList.remove('open');
+  document.getElementById('custom-range-box').style.display = 'none';
 }
 document.addEventListener('click', function (e) {
   const wrap = document.querySelector('.date-range');
@@ -234,17 +235,20 @@ function renderQuickSelect() {
 function selectQuickRange(label) {
   const opt = QUICK_RANGES.find(function (o) { return o.label === label; });
   if (!opt) return;
+  const box = document.getElementById('custom-range-box');
   if (opt.custom) {
-    document.getElementById('custom-range-box').classList.add('open');
+    box.classList.add('open');
+    box.style.display = 'block';
     renderQuickSelect();
     return;
   }
+  box.classList.remove('open');
+  box.style.display = 'none';
   const range = opt.fn();
   dateFrom = range[0];
   dateTo = range[1];
   dateRangeLabel = label;
   document.getElementById('date-range-label').textContent = label;
-  document.getElementById('custom-range-box').classList.remove('open');
   renderQuickSelect();
   closeDatePanel();
   renderAll();
@@ -278,6 +282,7 @@ function resolveKeys(headers) {
 
 window.onload = function () {
   renderQuickSelect();
+  document.getElementById('date-range-panel').addEventListener('click', function (e) { e.stopPropagation(); });
   google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID,
     callback: handleCredentialResponse,
