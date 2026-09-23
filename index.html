@@ -80,11 +80,25 @@
   }
   .quick-select button:hover { background: var(--paper); }
   .quick-select button.active { background: var(--violet-soft); color: var(--violet-dark); font-weight: 600; }
-  .custom-range-box { width: 260px; padding: 16px; display: none; }
+  .custom-range-box { width: 300px; padding: 16px; display: none; }
   .custom-range-box.open { display: block; }
-  .custom-range-box .crb-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 10px; }
-  .custom-range-box .crb-inputs { display: flex; gap: 8px; margin-bottom: 14px; }
-  .custom-range-box input[type=date] { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-size: 13px; font-family: inherit; }
+  .custom-range-box .crb-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+  .custom-range-box .crb-hint { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cal-nav button { background: none; border: 1px solid var(--line); border-radius: 6px; width: 26px; height: 26px; cursor: pointer; color: var(--muted); font-size: 13px; }
+  .cal-nav button:hover { border-color: var(--violet); color: var(--violet); }
+  .cal-nav .cal-month-label { font-size: 13px; font-weight: 600; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 14px; }
+  .cal-dow { text-align: center; font-size: 10px; color: var(--muted); padding-bottom: 4px; text-transform: uppercase; }
+  .cal-day { text-align: center; font-size: 13px; padding: 6px 0; border-radius: 6px; cursor: pointer; }
+  .cal-day:hover { background: var(--violet-soft); }
+  .cal-day.empty { cursor: default; }
+  .cal-day.empty:hover { background: none; }
+  .cal-day.in-range { background: var(--violet-soft); border-radius: 0; }
+  .cal-day.range-start, .cal-day.range-end { background: var(--violet); color: #fff; font-weight: 600; }
+  .cal-day.range-start { border-radius: 6px 0 0 6px; }
+  .cal-day.range-end { border-radius: 0 6px 6px 0; }
+  .cal-day.range-start.range-end { border-radius: 6px; }
   .custom-range-box .crb-actions { display: flex; justify-content: flex-end; gap: 8px; }
   .crb-cancel { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; color: var(--muted); }
   .crb-apply { background: var(--violet); border: none; border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; color: #fff; font-weight: 600; }
@@ -144,11 +158,14 @@
       <div class="date-range-panel" id="date-range-panel">
         <div class="quick-select" id="quick-select"></div>
         <div class="custom-range-box" id="custom-range-box">
-          <div class="crb-label">Custom range</div>
-          <div class="crb-inputs">
-            <input type="date" id="crb-from">
-            <input type="date" id="crb-to">
+          <div class="crb-label">Custom date range</div>
+          <div class="crb-hint">Click a start date, then click an end date.</div>
+          <div class="cal-nav">
+            <button type="button" onclick="calNav(-1)">‹</button>
+            <span class="cal-month-label" id="cal-month-label"></span>
+            <button type="button" onclick="calNav(1)">›</button>
           </div>
+          <div class="cal-grid" id="cal-grid"></div>
           <div class="crb-actions">
             <button class="crb-cancel" type="button" onclick="closeDatePanel()">Cancel</button>
             <button class="crb-apply" type="button" onclick="applyCustomRange()">Apply</button>
@@ -217,6 +234,56 @@ document.addEventListener('click', function (e) {
   if (wrap && !wrap.contains(e.target)) closeDatePanel();
 });
 
+// ===== Custom range calendar =====
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+let calViewDate = new Date();
+let calRangeStart = null;
+let calRangeEnd = null;
+
+function sameDay(a, b) { return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+function calNav(delta) {
+  calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth() + delta, 1);
+  renderCalendar();
+}
+
+function renderCalendar() {
+  document.getElementById('cal-month-label').textContent = MONTH_NAMES[calViewDate.getMonth()] + ' ' + calViewDate.getFullYear();
+  const grid = document.getElementById('cal-grid');
+  let html = DOW.map(function (d) { return '<div class="cal-dow">' + d + '</div>'; }).join('');
+
+  const firstOfMonth = new Date(calViewDate.getFullYear(), calViewDate.getMonth(), 1);
+  const daysInMonth = new Date(calViewDate.getFullYear(), calViewDate.getMonth() + 1, 0).getDate();
+  const leadingBlanks = firstOfMonth.getDay();
+
+  for (let i = 0; i < leadingBlanks; i++) html += '<div class="cal-day empty"></div>';
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(calViewDate.getFullYear(), calViewDate.getMonth(), day);
+    let cls = 'cal-day';
+    if (calRangeStart && sameDay(d, calRangeStart)) cls += ' range-start';
+    if (calRangeEnd && sameDay(d, calRangeEnd)) cls += ' range-end';
+    if (calRangeStart && calRangeEnd && d > calRangeStart && d < calRangeEnd) cls += ' in-range';
+    html += '<div class="' + cls + '" onclick="calDayClick(' + day + ')">' + day + '</div>';
+  }
+  grid.innerHTML = html;
+}
+
+function calDayClick(day) {
+  const clicked = new Date(calViewDate.getFullYear(), calViewDate.getMonth(), day);
+  if (!calRangeStart || (calRangeStart && calRangeEnd)) {
+    calRangeStart = clicked;
+    calRangeEnd = null;
+  } else if (clicked < calRangeStart) {
+    calRangeEnd = calRangeStart;
+    calRangeStart = clicked;
+  } else {
+    calRangeEnd = clicked;
+  }
+  renderCalendar();
+}
+
 function renderQuickSelect() {
   const el = document.getElementById('quick-select');
   let html = '';
@@ -239,6 +306,8 @@ function selectQuickRange(label) {
   if (opt.custom) {
     box.classList.add('open');
     box.style.display = 'block';
+    calViewDate = calRangeStart || new Date();
+    renderCalendar();
     renderQuickSelect();
     return;
   }
@@ -255,11 +324,13 @@ function selectQuickRange(label) {
 }
 
 function applyCustomRange() {
-  const fromVal = document.getElementById('crb-from').value;
-  const toVal = document.getElementById('crb-to').value;
-  dateFrom = fromVal ? startOfDay(new Date(fromVal + 'T00:00:00')) : null;
-  dateTo = toVal ? endOfDay(new Date(toVal + 'T00:00:00')) : null;
-  dateRangeLabel = (fromVal || 'start') + ' → ' + (toVal || 'today');
+  if (!calRangeStart) return; // nothing picked yet
+  const rangeStartDate = calRangeStart;
+  const rangeEndDate = calRangeEnd || calRangeStart;
+  dateFrom = startOfDay(rangeStartDate);
+  dateTo = endOfDay(rangeEndDate);
+  function fmt(d) { return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear(); }
+  dateRangeLabel = fmt(rangeStartDate) + ' – ' + fmt(rangeEndDate);
   document.getElementById('date-range-label').textContent = dateRangeLabel;
   renderQuickSelect();
   closeDatePanel();
@@ -374,8 +445,8 @@ function clearFilters() {
   dateTo = null;
   dateRangeLabel = 'All time';
   document.getElementById('date-range-label').textContent = 'All time';
-  document.getElementById('crb-from').value = '';
-  document.getElementById('crb-to').value = '';
+  calRangeStart = null;
+  calRangeEnd = null;
   renderQuickSelect();
   document.getElementById('f-entity-type').value = '';
   document.getElementById('f-reason').value = '';
